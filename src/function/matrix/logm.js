@@ -11,17 +11,20 @@ export const createLogm = /* #__PURE__ */ factory(name, dependencies, ({ typed, 
    * the inverse of the matrix exponential. Not to be confused with log(a),
    * which performs element-wise logarithm.
    *
-   * This function uses the Schur-Parlett algorithm as described in:
+   * This function implements the Schur-Parlett algorithm (Algorithm 11.9) from:
    * - "Functions of Matrices: Theory and Computation" by N. J. Higham (2008)
    * - Al-Mohy and Higham (2011), "Improved Inverse Scaling and Squaring Algorithms"
    *
    * The algorithm:
-   * 1. Computes the Schur decomposition A = U*T*U^T
-   * 2. Computes log(T) using Parlett recurrence on the triangular matrix
+   * 1. Computes the real Schur decomposition A = U*T*U^T
+   * 2. Computes log(T) using Parlett recurrence with direct 2x2 block handling
    * 3. Transforms back: log(A) = U*log(T)*U^T
    *
-   * This approach mirrors scipy.linalg.logm and provides better numerical stability
-   * for matrices with complex eigenvalues, negative eigenvalues, and ill-conditioned cases.
+   * For 2x2 blocks (complex eigenvalues), uses the divided difference formula:
+   * log(A) = α*I + β*A where β = (log(λ₁)-log(λ₂))/(λ₁-λ₂)
+   *
+   * Note: This differs from scipy.linalg.logm which converts to complex Schur form
+   * via rsf2csf. Our approach stays in real arithmetic for efficiency.
    *
    * Syntax:
    *
@@ -293,9 +296,17 @@ export const createLogm = /* #__PURE__ */ factory(name, dependencies, ({ typed, 
   }
 
   /**
-   * Compute logarithm of a 2x2 matrix with complex eigenvalues
-   * Uses the formula: log(A) = α*I + β*A
-   * where α and β are computed from eigenvalues
+   * Compute logarithm of a 2x2 matrix using divided difference formula
+   * (Higham 2008, Section 11.4)
+   *
+   * Uses three-way switch for numerical stability:
+   *   1. Equal eigenvalues: β = 1/λ (derivative formula)
+   *   2. Near-equal: β = atanh(δ/μ)/δ (arctanh formula)
+   *   3. Well-separated: β = (log(λ₁)-log(λ₂))/(λ₁-λ₂) (standard)
+   *
+   * For complex eigenvalues λ = a ± ib:
+   *   log(λ) = log|λ| + i*arg(λ)
+   * Result is real-valued for complex conjugate pairs.
    */
   function _log2x2 (block) {
     const a = block[0][0]
@@ -320,10 +331,44 @@ export const createLogm = /* #__PURE__ */ factory(name, dependencies, ({ typed, 
       const logLambda1 = log(lambda1)
       const logLambda2 = log(lambda2)
 
-      // Compute coefficients for log(A) = α*I + β*A
       const lambdaDiff = subtract(lambda1, lambda2)
+      const lambdaSum = add(lambda1, lambda2)
+      const absDiff = Number(abs(lambdaDiff))
+      const absSum = Number(abs(lambdaSum))
+      const maxAbs = Math.max(Number(abs(lambda1)), Number(abs(lambda2)))
 
-      if (Number(abs(lambdaDiff)) > 1e-10) {
+      // Three-way switch for numerical stability
+      if (absDiff < 1e-14 * maxAbs) {
+        // Case 1: Eigenvalues essentially equal (within machine precision)
+        // Use derivative: d(log(t))/dt = 1/t
+        const lambdaAvg = multiply(0.5, lambdaSum)
+        const beta = divide(1, lambdaAvg)
+        const alpha = subtract(log(lambdaAvg), multiply(beta, lambdaAvg))
+
+        // For equal eigenvalues on diagonal, result is simpler
+        return [
+          [alpha, multiply(beta, b)],
+          [multiply(beta, c), alpha]
+        ]
+      } else if (absSum > 0 && absDiff / absSum < 1.5e-8) {
+        // Case 2: Eigenvalues close but not equal - use arctanh formula
+        // β = atanh(δ/μ) / δ where μ = (λ₁+λ₂)/2, δ = (λ₁-λ₂)/2
+        const mu = multiply(0.5, lambdaSum)
+        const delta = multiply(0.5, lambdaDiff)
+        const ratio = Number(divide(delta, mu))
+
+        // atanh(x) = 0.5 * log((1+x)/(1-x))
+        const atanhRatio = 0.5 * Math.log((1 + ratio) / (1 - ratio))
+        const beta = divide(atanhRatio, delta)
+        const alpha = subtract(logLambda1, multiply(beta, lambda1))
+
+        // log(A) = α*I + β*A
+        return [
+          [add(alpha, multiply(beta, a)), multiply(beta, b)],
+          [multiply(beta, c), add(alpha, multiply(beta, d))]
+        ]
+      } else {
+        // Case 3: Well-separated eigenvalues - standard divided difference
         // β = (log(λ₁) - log(λ₂)) / (λ₁ - λ₂)
         const beta = divide(subtract(logLambda1, logLambda2), lambdaDiff)
         // α = log(λ₁) - β*λ₁ = log(λ₂) - β*λ₂
@@ -333,13 +378,6 @@ export const createLogm = /* #__PURE__ */ factory(name, dependencies, ({ typed, 
         return [
           [add(alpha, multiply(beta, a)), multiply(beta, b)],
           [multiply(beta, c), add(alpha, multiply(beta, d))]
-        ]
-      } else {
-        // Equal eigenvalues - use simpler formula
-        const logLambda = multiply(0.5, add(logLambda1, logLambda2))
-        return [
-          [logLambda, 0],
-          [0, logLambda]
         ]
       }
     } else {
