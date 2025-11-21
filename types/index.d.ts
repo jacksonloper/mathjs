@@ -2056,6 +2056,16 @@ export interface MathJsInstance extends MathJsFactory {
   expm(x: Matrix): Matrix
 
   /**
+   * Calculate the matrix logarithm of a square matrix. The matrix logarithm
+   * is the inverse of the matrix exponential. Not to be confused with log(a),
+   * which performs element-wise logarithm. Uses the Schur-Parlett algorithm
+   * for numerical stability.
+   * @param x A square matrix
+   * @returns The matrix logarithm of x
+   */
+  logm(x: Matrix | MathArray): Matrix | MathArray
+
+  /**
    * Solves the real-valued Sylvester equation AX-XB=C for X, where A, B and C are
    * matrices of appropriate dimensions, being A and B squared. The method used is
    * the Bartels-Stewart algorithm.

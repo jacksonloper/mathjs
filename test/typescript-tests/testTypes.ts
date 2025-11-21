@@ -3176,3 +3176,20 @@ Match types of exact positional arguments.
   expectTypeOf(mixArray3).toMatchTypeOf<MathArray<MathScalarType>>()
   expectTypeOf(unitArray3).toMatchTypeOf<MathArray<Unit>>()
 }
+
+/*
+Matrix logarithm function tests
+*/
+{
+  const math = create(all, {})
+  
+  // Test logm with Matrix
+  const mat = math.matrix([[1, 2], [3, 4]])
+  const result1 = math.logm(mat)
+  expectTypeOf(result1).toMatchTypeOf<Matrix | MathArray>()
+  
+  // Test logm with Array
+  const arr = [[1, 2], [3, 4]]
+  const result2 = math.logm(arr)
+  expectTypeOf(result2).toMatchTypeOf<Matrix | MathArray>()
+}
