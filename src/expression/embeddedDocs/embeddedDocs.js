@@ -82,6 +82,7 @@ import { sqrtDocs } from './function/arithmetic/sqrt.js'
 import { sqrtmDocs } from './function/arithmetic/sqrtm.js'
 import { sylvesterDocs } from './function/algebra/sylvester.js'
 import { schurDocs } from './function/algebra/schur.js'
+import { rsf2csfDocs } from './function/algebra/rsf2csf.js'
 import { lyapDocs } from './function/algebra/lyap.js'
 import { squareDocs } from './function/arithmetic/square.js'
 import { subtractDocs } from './function/arithmetic/subtract.js'
@@ -155,6 +156,8 @@ import { transposeDocs } from './function/matrix/transpose.js'
 import { zerosDocs } from './function/matrix/zeros.js'
 import { fftDocs } from './function/matrix/fft.js'
 import { ifftDocs } from './function/matrix/ifft.js'
+import { logmDocs } from './function/matrix/logm.js'
+import { logmTriuDocs } from './function/matrix/logm_triu.js'
 import { bernoulliDocs } from './function/probability/bernoulli.js'
 import { combinationsDocs } from './function/probability/combinations.js'
 import { combinationsWithRepDocs } from './function/probability/combinationsWithRep.js'
@@ -392,6 +395,8 @@ export const embeddedDocs = {
   log2: log2Docs,
   log1p: log1pDocs,
   log10: log10Docs,
+  logm: logmDocs,
+  logm_triu: logmTriuDocs,
   mod: modDocs,
   multiply: multiplyDocs,
   norm: normDocs,
@@ -496,6 +501,7 @@ export const embeddedDocs = {
   ifft: ifftDocs,
   sylvester: sylvesterDocs,
   schur: schurDocs,
+  rsf2csf: rsf2csfDocs,
   lyap: lyapDocs,
 
   // functions - numeric

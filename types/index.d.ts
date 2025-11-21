@@ -2056,6 +2056,26 @@ export interface MathJsInstance extends MathJsFactory {
   expm(x: Matrix): Matrix
 
   /**
+   * Calculate the matrix logarithm of a square matrix. The matrix logarithm
+   * is the inverse of the matrix exponential. Not to be confused with log(a),
+   * which performs element-wise logarithm. Uses the Schur-Parlett algorithm
+   * for numerical stability and robustness.
+   * @param x A square matrix
+   * @returns The matrix logarithm of x
+   */
+  logm(x: Matrix | MathArray): Matrix | MathArray
+
+  /**
+   * Calculate the matrix logarithm of an upper triangular matrix.
+   * Follows scipy's approach: if all diagonal entries are non-negative real,
+   * computes real logarithm; otherwise, converts to complex and computes
+   * complex logarithm. Uses Parlett recurrence (Higham's Algorithm 11.9).
+   * @param T An upper triangular matrix
+   * @returns The matrix logarithm of T (real or complex)
+   */
+  logm_triu(T: Matrix | MathArray): Matrix | MathArray
+
+  /**
    * Solves the real-valued Sylvester equation AX-XB=C for X, where A, B and C are
    * matrices of appropriate dimensions, being A and B squared. The method used is
    * the Bartels-Stewart algorithm.
