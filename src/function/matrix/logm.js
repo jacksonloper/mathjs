@@ -3,28 +3,28 @@ import { format } from '../../utils/string.js'
 import { factory } from '../../utils/factory.js'
 
 const name = 'logm'
-const dependencies = ['typed', 'matrix', 'log', 'multiply', 'subtract', 'add', 'divide', 'abs', 'identity', 'schur', 'transpose', 'sqrtm']
+const dependencies = ['typed', 'matrix', 'log', 'multiply', 'subtract', 'add', 'divide', 'abs', 'identity', 'schur', 'transpose', 'sqrtm', 'rsf2csf', 'logm_triu', 'conj']
 
-export const createLogm = /* #__PURE__ */ factory(name, dependencies, ({ typed, matrix, log, multiply, subtract, add, divide, abs, identity, schur, transpose, sqrtm }) => {
+export const createLogm = /* #__PURE__ */ factory(name, dependencies, ({ typed, matrix, log, multiply, subtract, add, divide, abs, identity, schur, transpose, sqrtm, rsf2csf, logm_triu, conj }) => {
   /**
    * Calculate the matrix logarithm of a square matrix. The matrix logarithm is
    * the inverse of the matrix exponential. Not to be confused with log(a),
    * which performs element-wise logarithm.
    *
-   * This function implements the Schur-Parlett algorithm (Algorithm 11.9) from:
+   * This function implements the scipy-compatible Schur-Parlett algorithm from:
+   * - scipy.linalg.logm (SciPy's matrix logarithm implementation)
    * - "Functions of Matrices: Theory and Computation" by N. J. Higham (2008)
    * - Al-Mohy and Higham (2011), "Improved Inverse Scaling and Squaring Algorithms"
    *
-   * The algorithm:
-   * 1. Computes the real Schur decomposition A = U*T*U^T
-   * 2. Computes log(T) using Parlett recurrence with direct 2x2 block handling
-   * 3. Transforms back: log(A) = U*log(T)*U^T
+   * The algorithm (matching scipy.linalg.logm):
+   * 1. If A is already upper triangular, apply logm_triu directly
+   * 2. Otherwise, compute real Schur decomposition A = U*T*U^T
+   * 3. If T has 2x2 blocks (complex eigenvalues), convert to complex Schur via rsf2csf
+   * 4. Compute log(T) using logm_triu (Parlett recurrence)
+   * 5. Transform back: log(A) = U*log(T)*U^H
    *
-   * For 2x2 blocks (complex eigenvalues), uses the divided difference formula:
-   * log(A) = α*I + β*A where β = (log(λ₁)-log(λ₂))/(λ₁-λ₂)
-   *
-   * Note: This differs from scipy.linalg.logm which converts to complex Schur form
-   * via rsf2csf. Our approach stays in real arithmetic for efficiency.
+   * This matches scipy's approach exactly, including the rsf2csf conversion step
+   * for matrices with complex eigenvalues.
    *
    * Syntax:
    *
@@ -40,7 +40,7 @@ export const createLogm = /* #__PURE__ */ factory(name, dependencies, ({ typed, 
    *
    * See also:
    *
-   *     expm, log, sqrtm, schur
+   *     expm, log, sqrtm, schur, rsf2csf, logm_triu
    *
    * @param {Matrix | Array} A  A square matrix
    * @return {Matrix | Array}   The matrix logarithm of A
@@ -58,7 +58,7 @@ export const createLogm = /* #__PURE__ */ factory(name, dependencies, ({ typed, 
   })
 
   /**
-   * Internal implementation of matrix logarithm using Schur-Parlett algorithm
+   * Internal implementation of matrix logarithm using scipy-compatible Schur-Parlett algorithm
    * Falls back to Taylor series for sparse matrices or if Schur fails
    */
   function _logm (A) {
@@ -84,19 +84,53 @@ export const createLogm = /* #__PURE__ */ factory(name, dependencies, ({ typed, 
       return _logmTaylorSeries(A, n)
     }
 
+    // Check if A is already upper triangular
+    let isTriangular = true
+    for (let i = 1; i < n; i++) {
+      for (let j = 0; j < i; j++) {
+        if (Math.abs(Number(A.get([i, j]))) > 1e-10) {
+          isTriangular = false
+          break
+        }
+      }
+      if (!isTriangular) break
+    }
+
+    if (isTriangular) {
+      // A is already triangular - use logm_triu directly
+      return logm_triu(A)
+    }
+
     try {
-      // Try Schur-Parlett algorithm (best for general case)
+      // Compute Schur decomposition
       const schurResult = schur(A)
-      const U = schurResult.U
-      const T = schurResult.T
+      let U = schurResult.U
+      let T = schurResult.T
 
-      // Compute log(T) using Parlett recurrence on upper triangular matrix
-      const logT = _logTriangular(T, n)
+      // Check if T is strictly upper triangular or has 2x2 blocks
+      let hasBlocks = false
+      for (let i = 1; i < n; i++) {
+        if (Math.abs(Number(T.get([i, i - 1]))) > 1e-10) {
+          hasBlocks = true
+          break
+        }
+      }
 
-      // Transform back: log(A) = U * log(T) * U^T
-      const UT = transpose(U)
+      // If T has 2x2 blocks, convert to complex Schur form (matching scipy)
+      if (hasBlocks) {
+        const rsf2csfResult = rsf2csf(T, U)
+        T = rsf2csfResult.T
+        U = rsf2csfResult.U
+      }
+
+      // Compute log(T) using logm_triu
+      const logT = logm_triu(T)
+
+      // Transform back: log(A) = U * log(T) * U^H
+      // U^H is conjugate transpose
+      const UH = transpose(conj(U))
       let result = multiply(U, logT)
-      result = multiply(result, UT)
+      result = multiply(result, UH)
 
       return result
     } catch (error) {
@@ -193,227 +227,5 @@ export const createLogm = /* #__PURE__ */ factory(name, dependencies, ({ typed, 
       }
     }
     return matrix(result)
-  }
-
-  /**
-   * Compute logarithm of upper triangular/quasi-triangular matrix using
-   * Parlett recurrence (Algorithm 11.9 from Higham 2008) with 2x2 block handling
-   */
-  function _logTriangular (T, n) {
-    const result = []
-
-    // Initialize result matrix
-    for (let i = 0; i < n; i++) {
-      result[i] = []
-      for (let j = 0; j < n; j++) {
-        result[i][j] = 0
-      }
-    }
-
-    // Compute diagonal blocks (1x1 or 2x2)
-    // Detect 2x2 blocks by checking subdiagonal elements
-    let i = 0
-    while (i < n) {
-      if (i < n - 1 && Math.abs(Number(T.get([i + 1, i]))) > 1e-10) {
-        // 2x2 block detected at [i:i+2, i:i+2]
-        const block = [
-          [T.get([i, i]), T.get([i, i + 1])],
-          [T.get([i + 1, i]), T.get([i + 1, i + 1])]
-        ]
-        const logBlock = _log2x2(block)
-
-        // Store the result
-        result[i][i] = logBlock[0][0]
-        result[i][i + 1] = logBlock[0][1]
-        result[i + 1][i] = logBlock[1][0]
-        result[i + 1][i + 1] = logBlock[1][1]
-
-        i += 2 // Skip next diagonal element (part of this block)
-      } else {
-        // 1x1 block (real eigenvalue)
-        const tii = T.get([i, i])
-        result[i][i] = log(tii)
-        i += 1
-      }
-    }
-
-    // Use Parlett's recurrence for off-diagonal elements
-    // Must skip over 2x2 blocks on diagonal
-    for (let diag = 1; diag < n; diag++) {
-      for (let i = 0; i < n - diag; i++) {
-        const j = i + diag
-
-        // Skip if this element is part of a diagonal 2x2 block
-        if (Math.abs(Number(T.get([i + 1, i]))) > 1e-10 && j === i + 1) {
-          continue // Already computed as part of 2x2 block
-        }
-
-        // Compute sum for Parlett recurrence
-        let sum = 0
-        for (let k = i + 1; k < j; k++) {
-          sum = add(sum, subtract(
-            multiply(result[i][k], T.get([k, j])),
-            multiply(T.get([i, k]), result[k][j])
-          ))
-        }
-
-        const tii = T.get([i, i])
-        const tjj = T.get([j, j])
-        const tij = T.get([i, j])
-        const fii = result[i][i]
-        const fjj = result[j][j]
-
-        // Check if diagonal elements (eigenvalues) are close
-        const diff = subtract(tii, tjj)
-        const absDiff = abs(diff)
-        const fdiff = subtract(fii, fjj)
-
-        // If eigenvalues are well-separated, use standard Parlett formula
-        if (Number(absDiff) > 1e-10) {
-          // F[i,j] = (T[i,j] * (F[i,i] - F[j,j]) - sum) / (T[i,i] - T[j,j])
-          const numerator = subtract(
-            multiply(tij, fdiff),
-            sum
-          )
-          result[i][j] = divide(numerator, diff)
-        } else {
-          // Eigenvalues nearly equal - use L'Hôpital's rule
-          // For logarithm: d(log(t))/dt = 1/t
-          // So F[i,j] = T[i,j] / T[i,i] when T[i,i] = T[j,j] and no sum terms
-          if (Number(abs(sum)) < 1e-14) {
-            // Simple case: F[i,j] = T[i,j] / T[i,i]
-            result[i][j] = divide(tij, tii)
-          } else {
-            // With sum terms, use average
-            const avgDiag = multiply(0.5, add(tii, tjj))
-            result[i][j] = divide(subtract(tij, sum), avgDiag)
-          }
-        }
-      }
-    }
-
-    return matrix(result)
-  }
-
-  /**
-   * Compute logarithm of a 2x2 matrix using divided difference formula
-   * (Higham 2008, Section 11.4)
-   *
-   * Uses three-way switch for numerical stability:
-   *   1. Equal eigenvalues: β = 1/λ (derivative formula)
-   *   2. Near-equal: β = atanh(δ/μ)/δ (arctanh formula)
-   *   3. Well-separated: β = (log(λ₁)-log(λ₂))/(λ₁-λ₂) (standard)
-   *
-   * For complex eigenvalues λ = a ± ib:
-   *   log(λ) = log|λ| + i*arg(λ)
-   * Result is real-valued for complex conjugate pairs.
-   */
-  function _log2x2 (block) {
-    const a = block[0][0]
-    const b = block[0][1]
-    const c = block[1][0]
-    const d = block[1][1]
-
-    // Compute eigenvalues using quadratic formula
-    // For [[a,b],[c,d]]: λ = (a+d ± sqrt((a+d)²-4(ad-bc)))/2
-    const trace = add(a, d)
-    const det = subtract(multiply(a, d), multiply(b, c))
-    const discriminant = subtract(multiply(trace, trace), multiply(4, det))
-
-    const discNum = Number(discriminant)
-
-    if (discNum >= 0) {
-      // Real eigenvalues
-      const sqrtDisc = Math.sqrt(discNum)
-      const lambda1 = multiply(0.5, add(trace, sqrtDisc))
-      const lambda2 = multiply(0.5, subtract(trace, sqrtDisc))
-
-      const logLambda1 = log(lambda1)
-      const logLambda2 = log(lambda2)
-
-      const lambdaDiff = subtract(lambda1, lambda2)
-      const lambdaSum = add(lambda1, lambda2)
-      const absDiff = Number(abs(lambdaDiff))
-      const absSum = Number(abs(lambdaSum))
-      const maxAbs = Math.max(Number(abs(lambda1)), Number(abs(lambda2)))
-
-      // Three-way switch for numerical stability
-      if (absDiff < 1e-14 * maxAbs) {
-        // Case 1: Eigenvalues essentially equal (within machine precision)
-        // Use derivative: d(log(t))/dt = 1/t
-        const lambdaAvg = multiply(0.5, lambdaSum)
-        const beta = divide(1, lambdaAvg)
-        const alpha = subtract(log(lambdaAvg), multiply(beta, lambdaAvg))
-
-        // For equal eigenvalues on diagonal, result is simpler
-        return [
-          [alpha, multiply(beta, b)],
-          [multiply(beta, c), alpha]
-        ]
-      } else if (absSum > 0 && absDiff / absSum < 1.5e-8) {
-        // Case 2: Eigenvalues close but not equal - use arctanh formula
-        // β = atanh(δ/μ) / δ where μ = (λ₁+λ₂)/2, δ = (λ₁-λ₂)/2
-        const mu = multiply(0.5, lambdaSum)
-        const delta = multiply(0.5, lambdaDiff)
-        const ratio = Number(divide(delta, mu))
-
-        // atanh(x) = 0.5 * log((1+x)/(1-x))
-        const atanhRatio = 0.5 * Math.log((1 + ratio) / (1 - ratio))
-        const beta = divide(atanhRatio, delta)
-        const alpha = subtract(logLambda1, multiply(beta, lambda1))
-
-        // log(A) = α*I + β*A
-        return [
-          [add(alpha, multiply(beta, a)), multiply(beta, b)],
-          [multiply(beta, c), add(alpha, multiply(beta, d))]
-        ]
-      } else {
-        // Case 3: Well-separated eigenvalues - standard divided difference
-        // β = (log(λ₁) - log(λ₂)) / (λ₁ - λ₂)
-        const beta = divide(subtract(logLambda1, logLambda2), lambdaDiff)
-        // α = log(λ₁) - β*λ₁ = log(λ₂) - β*λ₂
-        const alpha = subtract(logLambda1, multiply(beta, lambda1))
-
-        // log(A) = α*I + β*A
-        return [
-          [add(alpha, multiply(beta, a)), multiply(beta, b)],
-          [multiply(beta, c), add(alpha, multiply(beta, d))]
-        ]
-      }
-    } else {
-      // Complex conjugate eigenvalues: λ = α ± iβ
-      // where α = trace/2, β = sqrt(-discriminant)/2
-      const alpha = multiply(0.5, trace)
-      const beta = multiply(0.5, Math.sqrt(-discNum))
-
-      // For complex λ = α + iβ:
-      // log(λ) = log|λ| + i*arg(λ) = log(sqrt(α²+β²)) + i*atan2(β, α)
-      const magnitude = Math.sqrt(Number(multiply(alpha, alpha)) + beta * beta)
-      const logMag = Math.log(magnitude)
-      const angle = Math.atan2(beta, Number(alpha))
-
-      // log(λ₁) = logMag + i*angle
-      // log(λ₂) = logMag - i*angle (conjugate)
-
-      // For the formula log(A) = α*I + β*A with complex eigenvalues:
-      // We need: (log(λ₁) - log(λ₂)) / (λ₁ - λ₂) and related terms
-      // λ₁ - λ₂ = 2iβ
-      // log(λ₁) - log(λ₂) = 2i*angle
-
-      // β_coeff = (log(λ₁) - log(λ₂)) / (λ₁ - λ₂) = (2i*angle) / (2iβ) = angle/β
-      const betaCoeff = angle / beta
-
-      // α_coeff = log(λ₁) - β_coeff*λ₁
-      // = (logMag + i*angle) - (angle/β)*(α + iβ)
-      // = logMag + i*angle - α*angle/β - i*angle
-      // = logMag - α*angle/β
-      const alphaCoeff = logMag - Number(alpha) * angle / beta
-
-      // log(A) = α_coeff*I + β_coeff*A (result is real)
-      return [
-        [alphaCoeff + betaCoeff * Number(a), betaCoeff * Number(b)],
-        [betaCoeff * Number(c), alphaCoeff + betaCoeff * Number(d)]
-      ]
-    }
   }
 })
