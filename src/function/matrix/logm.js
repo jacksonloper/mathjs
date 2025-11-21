@@ -194,7 +194,7 @@ export const createLogm = /* #__PURE__ */ factory(name, dependencies, ({ typed, 
 
   /**
    * Compute logarithm of upper triangular/quasi-triangular matrix using
-   * Parlett recurrence (Algorithm 11.9 from Higham 2008)
+   * Parlett recurrence (Algorithm 11.9 from Higham 2008) with 2x2 block handling
    */
   function _logTriangular (T, n) {
     const result = []
@@ -207,19 +207,43 @@ export const createLogm = /* #__PURE__ */ factory(name, dependencies, ({ typed, 
       }
     }
 
-    // Compute diagonal elements - log of eigenvalues
-    for (let i = 0; i < n; i++) {
-      const tii = T.get([i, i])
-      result[i][i] = log(tii)
+    // Compute diagonal blocks (1x1 or 2x2)
+    // Detect 2x2 blocks by checking subdiagonal elements
+    let i = 0
+    while (i < n) {
+      if (i < n - 1 && Math.abs(Number(T.get([i + 1, i]))) > 1e-10) {
+        // 2x2 block detected at [i:i+2, i:i+2]
+        const block = [
+          [T.get([i, i]), T.get([i, i + 1])],
+          [T.get([i + 1, i]), T.get([i + 1, i + 1])]
+        ]
+        const logBlock = _log2x2(block)
+
+        // Store the result
+        result[i][i] = logBlock[0][0]
+        result[i][i + 1] = logBlock[0][1]
+        result[i + 1][i] = logBlock[1][0]
+        result[i + 1][i + 1] = logBlock[1][1]
+
+        i += 2 // Skip next diagonal element (part of this block)
+      } else {
+        // 1x1 block (real eigenvalue)
+        const tii = T.get([i, i])
+        result[i][i] = log(tii)
+        i += 1
+      }
     }
 
     // Use Parlett's recurrence for off-diagonal elements
-    // Correct formula: F[i,j] * (T[i,i] - T[j,j]) = T[i,j] * (F[i,i] - F[j,j]) - sum
-    // Where sum = sum_{k=i+1}^{j-1} (F[i,k]*T[k,j] - T[i,k]*F[k,j])
-
+    // Must skip over 2x2 blocks on diagonal
     for (let diag = 1; diag < n; diag++) {
       for (let i = 0; i < n - diag; i++) {
         const j = i + diag
+
+        // Skip if this element is part of a diagonal 2x2 block
+        if (Math.abs(Number(T.get([i + 1, i]))) > 1e-10 && j === i + 1) {
+          continue // Already computed as part of 2x2 block
+        }
 
         // Compute sum for Parlett recurrence
         let sum = 0
@@ -266,5 +290,92 @@ export const createLogm = /* #__PURE__ */ factory(name, dependencies, ({ typed, 
     }
 
     return matrix(result)
+  }
+
+  /**
+   * Compute logarithm of a 2x2 matrix with complex eigenvalues
+   * Uses the formula: log(A) = α*I + β*A
+   * where α and β are computed from eigenvalues
+   */
+  function _log2x2 (block) {
+    const a = block[0][0]
+    const b = block[0][1]
+    const c = block[1][0]
+    const d = block[1][1]
+
+    // Compute eigenvalues using quadratic formula
+    // For [[a,b],[c,d]]: λ = (a+d ± sqrt((a+d)²-4(ad-bc)))/2
+    const trace = add(a, d)
+    const det = subtract(multiply(a, d), multiply(b, c))
+    const discriminant = subtract(multiply(trace, trace), multiply(4, det))
+
+    const discNum = Number(discriminant)
+
+    if (discNum >= 0) {
+      // Real eigenvalues
+      const sqrtDisc = Math.sqrt(discNum)
+      const lambda1 = multiply(0.5, add(trace, sqrtDisc))
+      const lambda2 = multiply(0.5, subtract(trace, sqrtDisc))
+
+      const logLambda1 = log(lambda1)
+      const logLambda2 = log(lambda2)
+
+      // Compute coefficients for log(A) = α*I + β*A
+      const lambdaDiff = subtract(lambda1, lambda2)
+
+      if (Number(abs(lambdaDiff)) > 1e-10) {
+        // β = (log(λ₁) - log(λ₂)) / (λ₁ - λ₂)
+        const beta = divide(subtract(logLambda1, logLambda2), lambdaDiff)
+        // α = log(λ₁) - β*λ₁ = log(λ₂) - β*λ₂
+        const alpha = subtract(logLambda1, multiply(beta, lambda1))
+
+        // log(A) = α*I + β*A
+        return [
+          [add(alpha, multiply(beta, a)), multiply(beta, b)],
+          [multiply(beta, c), add(alpha, multiply(beta, d))]
+        ]
+      } else {
+        // Equal eigenvalues - use simpler formula
+        const logLambda = multiply(0.5, add(logLambda1, logLambda2))
+        return [
+          [logLambda, 0],
+          [0, logLambda]
+        ]
+      }
+    } else {
+      // Complex conjugate eigenvalues: λ = α ± iβ
+      // where α = trace/2, β = sqrt(-discriminant)/2
+      const alpha = multiply(0.5, trace)
+      const beta = multiply(0.5, Math.sqrt(-discNum))
+
+      // For complex λ = α + iβ:
+      // log(λ) = log|λ| + i*arg(λ) = log(sqrt(α²+β²)) + i*atan2(β, α)
+      const magnitude = Math.sqrt(Number(multiply(alpha, alpha)) + beta * beta)
+      const logMag = Math.log(magnitude)
+      const angle = Math.atan2(beta, Number(alpha))
+
+      // log(λ₁) = logMag + i*angle
+      // log(λ₂) = logMag - i*angle (conjugate)
+
+      // For the formula log(A) = α*I + β*A with complex eigenvalues:
+      // We need: (log(λ₁) - log(λ₂)) / (λ₁ - λ₂) and related terms
+      // λ₁ - λ₂ = 2iβ
+      // log(λ₁) - log(λ₂) = 2i*angle
+
+      // β_coeff = (log(λ₁) - log(λ₂)) / (λ₁ - λ₂) = (2i*angle) / (2iβ) = angle/β
+      const betaCoeff = angle / beta
+
+      // α_coeff = log(λ₁) - β_coeff*λ₁
+      // = (logMag + i*angle) - (angle/β)*(α + iβ)
+      // = logMag + i*angle - α*angle/β - i*angle
+      // = logMag - α*angle/β
+      const alphaCoeff = logMag - Number(alpha) * angle / beta
+
+      // log(A) = α_coeff*I + β_coeff*A (result is real)
+      return [
+        [alphaCoeff + betaCoeff * Number(a), betaCoeff * Number(b)],
+        [betaCoeff * Number(c), alphaCoeff + betaCoeff * Number(d)]
+      ]
+    }
   }
 })
