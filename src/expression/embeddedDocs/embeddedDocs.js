@@ -157,6 +157,7 @@ import { zerosDocs } from './function/matrix/zeros.js'
 import { fftDocs } from './function/matrix/fft.js'
 import { ifftDocs } from './function/matrix/ifft.js'
 import { logmDocs } from './function/matrix/logm.js'
+import { logmTriuDocs } from './function/matrix/logm_triu.js'
 import { bernoulliDocs } from './function/probability/bernoulli.js'
 import { combinationsDocs } from './function/probability/combinations.js'
 import { combinationsWithRepDocs } from './function/probability/combinationsWithRep.js'
@@ -395,6 +396,7 @@ export const embeddedDocs = {
   log1p: log1pDocs,
   log10: log10Docs,
   logm: logmDocs,
+  logm_triu: logmTriuDocs,
   mod: modDocs,
   multiply: multiplyDocs,
   norm: normDocs,

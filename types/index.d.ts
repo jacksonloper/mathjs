@@ -2066,6 +2066,16 @@ export interface MathJsInstance extends MathJsFactory {
   logm(x: Matrix | MathArray): Matrix | MathArray
 
   /**
+   * Calculate the matrix logarithm of an upper triangular matrix.
+   * Follows scipy's approach: if all diagonal entries are non-negative real,
+   * computes real logarithm; otherwise, converts to complex and computes
+   * complex logarithm. Uses Parlett recurrence (Higham's Algorithm 11.9).
+   * @param T An upper triangular matrix
+   * @returns The matrix logarithm of T (real or complex)
+   */
+  logm_triu(T: Matrix | MathArray): Matrix | MathArray
+
+  /**
    * Solves the real-valued Sylvester equation AX-XB=C for X, where A, B and C are
    * matrices of appropriate dimensions, being A and B squared. The method used is
    * the Bartels-Stewart algorithm.
