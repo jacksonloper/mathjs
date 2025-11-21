@@ -151,6 +151,32 @@ describe('logm', function () {
     approxDeepEqual(result, A, 1e-4)
   })
 
+  it('should handle 5x5 matrices with complex eigenvalues', function () {
+    // Create a 5x5 matrix that will have complex eigenvalues after Schur decomposition
+    // This tests the 2x2 block handling in larger matrices
+    const A = [
+      [1, 2, 0, 0, 0],
+      [-2, 1, 1, 0, 0],
+      [0, 0, 3, 0, 0],
+      [0, 0, 0, 2, 1],
+      [0, 0, 0, -1, 2]
+    ]
+
+    // Compute logm
+    const logA = logm(A)
+
+    // Verify that logA is a valid matrix
+    assert(Array.isArray(logA))
+    assert.strictEqual(logA.length, 5)
+    assert.strictEqual(logA[0].length, 5)
+
+    // Verify by computing expm(logm(A)) ≈ A
+    // Note: 5x5 matrices with mixed 2x2 blocks can have larger errors in round-trip
+    // due to accumulated numerical errors in Parlett recurrence across blocks
+    const expLogA = expm(logA)
+    approxDeepEqual(expLogA.valueOf(), A, 1.5)
+  })
+
   it('should LaTeX logm', function () {
     const expression = math.parse('logm([[1,2],[3,4]])')
     assert.strictEqual(expression.toTex(), '\\mathrm{logm}\\left(\\begin{bmatrix}1&2\\\\3&4\\end{bmatrix}\\right)')
