@@ -1,12 +1,11 @@
 // test logm
 import assert from 'assert'
 
-import { approxDeepEqual, approxEqual } from '../../../../tools/approx.js'
+import { approxDeepEqual } from '../../../../tools/approx.js'
 import math from '../../../../src/defaultInstance.js'
 const logm = math.logm
 const expm = math.expm
 const matrix = math.matrix
-const multiply = math.multiply
 
 describe('logm', function () {
   it('should only accept a square matrix', function () {
@@ -63,15 +62,15 @@ describe('logm', function () {
     // The algorithm should handle this gracefully
     const eps = 1e-6
     const A = [[1 + eps, 1], [0, 1 - eps]]
-    
+
     // This should not throw an error
     const result = logm(A)
-    
+
     // Check that result is a valid matrix
     assert(Array.isArray(result))
     assert.strictEqual(result.length, 2)
     assert.strictEqual(result[0].length, 2)
-    
+
     // Verify by applying expm to the result
     const expResult = expm(result)
     approxDeepEqual(expResult.valueOf(), A, 0.01) // Relaxed tolerance
@@ -82,9 +81,9 @@ describe('logm', function () {
     // so the logarithm will have complex elements for some rotations
     const theta = Math.PI / 4
     const A = [[Math.cos(theta), -Math.sin(theta)], [Math.sin(theta), Math.cos(theta)]]
-    
+
     const result = logm(A)
-    
+
     // Verify by applying expm
     const expResult = expm(result)
     approxDeepEqual(expResult.valueOf(), A, 0.01) // Relaxed tolerance
@@ -109,7 +108,7 @@ describe('logm', function () {
     const A = [[-49, 24], [-64, 31]]
     const expA = expm(A)
     const logExpA = logm(expA)
-    
+
     // Should recover original matrix (with reasonable tolerance for this challenging case)
     approxDeepEqual(logExpA.valueOf(), A, 0.1)
   })
@@ -117,7 +116,7 @@ describe('logm', function () {
   it('should work on Matrix type', function () {
     const A = matrix([[Math.E, 0], [0, Math.E * Math.E]])
     const result = logm(A)
-    
+
     assert(result._data !== undefined) // Check it's a Matrix object
     approxDeepEqual(result, matrix([[1, 0], [0, 2]]), 1e-5)
   })
@@ -125,7 +124,7 @@ describe('logm', function () {
   it('should work on SparseMatrix', function () {
     const A = math.sparse([[Math.E, 0], [0, Math.E * Math.E]])
     const result = logm(A)
-    
+
     // Result should also be sparse
     assert.strictEqual(result.type, 'SparseMatrix')
     approxDeepEqual(result.toArray(), [[1, 0], [0, 2]], 1e-5)
@@ -135,7 +134,7 @@ describe('logm', function () {
     // Upper triangular with distinct eigenvalues
     const A = [[2, 1, 0], [0, 3, 1], [0, 0, 4]]
     const result = logm(A)
-    
+
     // Verify by computing expm of result
     const expResult = expm(result)
     approxDeepEqual(expResult.valueOf(), A, 0.05) // Relaxed tolerance for 3x3
@@ -147,7 +146,7 @@ describe('logm', function () {
     const A = [[0, 1], [0, 0]]
     const expA = [[1, 1], [0, 1]]
     const result = logm(expA)
-    
+
     approxDeepEqual(result, A, 1e-4)
   })
 

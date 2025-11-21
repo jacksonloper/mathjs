@@ -2058,8 +2058,8 @@ export interface MathJsInstance extends MathJsFactory {
   /**
    * Calculate the matrix logarithm of a square matrix. The matrix logarithm
    * is the inverse of the matrix exponential. Not to be confused with log(a),
-   * which performs element-wise logarithm. Uses the Schur-Parlett algorithm
-   * for numerical stability.
+   * which performs element-wise logarithm. Uses inverse scaling and squaring
+   * with Taylor series for numerical stability.
    * @param x A square matrix
    * @returns The matrix logarithm of x
    */

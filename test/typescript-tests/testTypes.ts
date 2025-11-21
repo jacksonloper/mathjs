@@ -3182,14 +3182,20 @@ Matrix logarithm function tests
 */
 {
   const math = create(all, {})
-  
+
   // Test logm with Matrix - use a matrix that can be computed
-  const mat = math.matrix([[4, 0], [0, 9]])
+  const mat = math.matrix([
+    [4, 0],
+    [0, 9]
+  ])
   const result1 = math.logm(mat)
   expectTypeOf(result1).toMatchTypeOf<Matrix | MathArray>()
-  
+
   // Test logm with Array - use a matrix that can be computed
-  const arr = [[Math.E, 0], [0, Math.E * Math.E]]
+  const arr = [
+    [Math.E, 0],
+    [0, Math.E * Math.E]
+  ]
   const result2 = math.logm(arr)
   expectTypeOf(result2).toMatchTypeOf<Matrix | MathArray>()
 }

@@ -11,11 +11,15 @@ export const createLogm = /* #__PURE__ */ factory(name, dependencies, ({ typed, 
    * the inverse of the matrix exponential. Not to be confused with log(a),
    * which performs element-wise logarithm.
    *
-   * This function uses a Parlett recurrence on the diagonal Schur form.
-   * For real matrices, it processes 2x2 blocks with complex conjugate eigenvalues
-   * and uses a simplified algorithm. For more details, see:
+   * This function uses the inverse scaling and squaring method with Taylor series.
+   * The matrix is repeatedly square-rooted until it is close to the identity matrix,
+   * then the Taylor series log(I + X) ≈ sum_{k=1}^∞ (-1)^{k+1} X^k / k is used,
+   * and finally the result is scaled back by 2^m. This approach mirrors the
+   * scipy.linalg.logm implementation for real matrices.
+   *
+   * For more details, see:
    * - "Functions of Matrices: Theory and Computation" by N. J. Higham (2008)
-   * - scipy.linalg.logm implementation
+   * - scipy.linalg.logm documentation
    *
    * Syntax:
    *
