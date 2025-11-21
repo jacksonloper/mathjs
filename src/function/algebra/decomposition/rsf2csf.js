@@ -120,6 +120,14 @@ export const createRsf2csf = /* #__PURE__ */ factory(name, dependencies, (
         const cAbsSq = multiply(Tc[m][m - 1].re, Tc[m][m - 1].re)
         const r = sqrt(addScalar(muAbsSq, cAbsSq))
 
+        // Check for numerical instability (r near zero)
+        const EPS_R = 1e-15 // Small threshold for r
+        if (Number(r.re) < EPS_R) {
+          // Skip this block if r is too small to avoid division by near-zero
+          Tc[m][m - 1] = complex(0, 0)
+          continue
+        }
+
         // Givens rotation parameters: c = mu / r, s = T[m, m-1] / r
         const cGivens = divideScalar(mu, r)
         const sGivens = divideScalar(Tc[m][m - 1], r)

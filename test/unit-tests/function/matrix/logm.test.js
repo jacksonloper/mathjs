@@ -121,13 +121,11 @@ describe('logm', function () {
     approxDeepEqual(result, matrix([[1, 0], [0, 2]]), 1e-5)
   })
 
-  it('should work on SparseMatrix', function () {
+  it('should not support SparseMatrix (throws error)', function () {
     const A = math.sparse([[Math.E, 0], [0, Math.E * Math.E]])
-    const result = logm(A)
-
-    // Result should also be sparse
-    assert.strictEqual(result.type, 'SparseMatrix')
-    approxDeepEqual(result.toArray(), [[1, 0], [0, 2]], 1e-5)
+    assert.throws(function () {
+      logm(A)
+    }, /logm does not support sparse matrices/)
   })
 
   it('should handle upper triangular matrices with different diagonal elements', function () {

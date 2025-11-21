@@ -3,9 +3,14 @@ import { format } from '../../utils/string.js'
 import { factory } from '../../utils/factory.js'
 
 const name = 'logm'
-const dependencies = ['typed', 'matrix', 'log', 'multiply', 'subtract', 'add', 'divide', 'abs', 'identity', 'schur', 'transpose', 'sqrtm', 'rsf2csf', 'logm_triu', 'conj']
+const dependencies = ['typed', 'matrix', 'log', 'multiply', 'subtract', 'add', 'divide', 'abs', 'identity', 'schur', 'transpose', 'rsf2csf', 'logm_triu', 'conj']
 
-export const createLogm = /* #__PURE__ */ factory(name, dependencies, ({ typed, matrix, log, multiply, subtract, add, divide, abs, identity, schur, transpose, sqrtm, rsf2csf, logm_triu, conj }) => { // eslint-disable-line camelcase
+// Constants for numerical tolerances
+const EPS = 2.220446049250313e-16 // machine epsilon
+const TRIANGULAR_TOL = 100 * EPS // tolerance for checking triangularity
+const BLOCK_DETECTION_TOL = 10 * EPS // tolerance for detecting 2x2 blocks
+
+export const createLogm = /* #__PURE__ */ factory(name, dependencies, ({ typed, matrix, log, multiply, subtract, add, divide, abs, identity, schur, transpose, rsf2csf, logm_triu, conj }) => { // eslint-disable-line camelcase
   /**
    * Calculate the matrix logarithm of a square matrix. The matrix logarithm is
    * the inverse of the matrix exponential. Not to be confused with log(a),
@@ -79,16 +84,19 @@ export const createLogm = /* #__PURE__ */ factory(name, dependencies, ({ typed, 
       return isSparseMatrix(A) ? A.createSparseMatrix(result) : result
     }
 
-    // For sparse matrices, use fallback (Schur requires QR which doesn't support sparse)
+    // For sparse matrices, throw an error (Schur requires QR which doesn't support sparse)
+    // Taylor series fallback was removed as it's not numerically stable
     if (isSparseMatrix(A)) {
-      return _logmTaylorSeries(A, n)
+      throw new Error('logm does not support sparse matrices. Convert to dense matrix first using matrix.toDenseMatrix() or matrix.toArray()')
     }
 
     // Check if A is already upper triangular
     let isTriangular = true
     for (let i = 1; i < n; i++) {
       for (let j = 0; j < i; j++) {
-        if (Math.abs(Number(A.get([i, j]))) > 1e-10) {
+        const val = A.get([i, j])
+        const absVal = abs(val)
+        if (Number(absVal) > TRIANGULAR_TOL) {
           isTriangular = false
           break
         }
@@ -110,7 +118,9 @@ export const createLogm = /* #__PURE__ */ factory(name, dependencies, ({ typed, 
       // Check if T is strictly upper triangular or has 2x2 blocks
       let hasBlocks = false
       for (let i = 1; i < n; i++) {
-        if (Math.abs(Number(T.get([i, i - 1]))) > 1e-10) {
+        const val = T.get([i, i - 1])
+        const absVal = abs(val)
+        if (Number(absVal) > BLOCK_DETECTION_TOL) {
           hasBlocks = true
           break
         }
@@ -134,98 +144,8 @@ export const createLogm = /* #__PURE__ */ factory(name, dependencies, ({ typed, 
 
       return result
     } catch (error) {
-      // If Schur fails, fall back to Taylor series
-      return _logmTaylorSeries(A, n)
+      // If Schur decomposition fails, re-throw the error with context
+      throw new Error('Matrix logarithm computation failed: ' + error.message)
     }
-  }
-
-  /**
-   * Fallback implementation using inverse scaling and squaring with Taylor series
-   * (for sparse matrices or if Schur fails)
-   */
-  function _logmTaylorSeries (A, n) {
-    const I = identity(n)
-    let AScaled = A
-    let m = 0
-
-    // Take square roots until close to identity
-    const maxSquareRoots = 20
-    for (let i = 0; i < maxSquareRoots; i++) {
-      // Compute ||A - I||_1 (column sum norm)
-      let normValue = 0
-      for (let col = 0; col < n; col++) {
-        let colSum = 0
-        for (let row = 0; row < n; row++) {
-          const val = AScaled.get([row, col])
-          const diff = row === col ? subtract(val, 1) : val
-          colSum = add(colSum, abs(diff))
-        }
-        const colSumNum = Number(colSum)
-        if (colSumNum > normValue) {
-          normValue = colSumNum
-        }
-      }
-
-      if (normValue < 0.5) {
-        break
-      }
-
-      // Take square root
-      AScaled = sqrtm(AScaled)
-      m++
-
-      if (m >= maxSquareRoots) {
-        break
-      }
-    }
-
-    // Compute X = AScaled - I
-    const X = subtract(AScaled, I)
-
-    // Compute log(I + X) using Taylor series
-    let logA = _taylorLog(X, n)
-
-    // Undo scaling: log(A) = 2^m * log(A^(1/2^m))
-    if (m > 0) {
-      logA = multiply(Math.pow(2, m), logA)
-    }
-
-    return isSparseMatrix(A) ? A.createSparseMatrix(logA) : logA
-  }
-
-  /**
-   * Compute log(I + X) using Taylor series
-   */
-  function _taylorLog (X, n) {
-    const p = 25 // Number of terms in series
-    let logA = zeros(n, n)
-    let Xpower = X
-
-    for (let k = 1; k <= p; k++) {
-      const sign = (k % 2 === 1) ? 1 : -1
-      const term = divide(multiply(sign, Xpower), k)
-
-      logA = add(logA, term)
-
-      if (k < p) {
-        Xpower = multiply(Xpower, X)
-      }
-    }
-
-    return logA
-  }
-
-  /**
-   * Create a zero matrix
-   */
-  function zeros (rows, cols) {
-    const result = []
-    for (let i = 0; i < rows; i++) {
-      result[i] = []
-      for (let j = 0; j < cols; j++) {
-        result[i][j] = 0
-      }
-    }
-    return matrix(result)
   }
 })

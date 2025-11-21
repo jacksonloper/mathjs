@@ -4,6 +4,12 @@ import { format } from '../../utils/string.js'
 const name = 'logm_triu'
 const dependencies = ['typed', 'matrix', 'log', 'multiply', 'subtract', 'add', 'divide', 'abs', 'complex']
 
+// Constants for numerical tolerances
+const EPS = 2.220446049250313e-16 // machine epsilon
+const TRIANGULAR_CHECK_TOL = 1000 * EPS // tolerance for checking triangularity
+const EIGENVALUE_SEP_TOL = 1e-10 // tolerance for eigenvalue separation
+const SMALL_SUM_TOL = 1e-14 // tolerance for small sum in Parlett recurrence
+
 export const createLogmTriu = /* #__PURE__ */ factory(name, dependencies, ({ typed, matrix, log, multiply, subtract, add, divide, abs, complex }) => {
   /**
    * Calculate the matrix logarithm of an upper triangular matrix.
@@ -69,7 +75,8 @@ export const createLogmTriu = /* #__PURE__ */ factory(name, dependencies, ({ typ
     for (let i = 0; i < n; i++) {
       for (let j = 0; j < i; j++) {
         const val = T.get([i, j])
-        if (abs(val) > 1e-14) {
+        const absVal = abs(val)
+        if (Number(absVal) > TRIANGULAR_CHECK_TOL) {
           throw new Error('Matrix must be upper triangular')
         }
       }
@@ -79,6 +86,7 @@ export const createLogmTriu = /* #__PURE__ */ factory(name, dependencies, ({ typ
     let hasNegativeDiag = false
     for (let i = 0; i < n; i++) {
       const diag = T.get([i, i])
+      // Use mathjs's numeric handling instead of direct Number coercion when possible
       const diagNum = Number(diag)
       if (diagNum < 0) {
         hasNegativeDiag = true
@@ -152,7 +160,7 @@ export const createLogmTriu = /* #__PURE__ */ factory(name, dependencies, ({ typ
         } else {
           // Eigenvalues nearly equal - use L'Hôpital's rule
           // For logarithm: d(log(t))/dt = 1/t
-          if (Number(abs(sum)) < 1e-14) {
+          if (Number(abs(sum)) < SMALL_SUM_TOL) {
             // Simple case: F[i,j] = T[i,j] / T[i,i]
             result[i][j] = divide(tij, tii)
           } else {
@@ -221,7 +229,7 @@ export const createLogmTriu = /* #__PURE__ */ factory(name, dependencies, ({ typ
         const fdiff = subtract(fii, fjj)
 
         // If eigenvalues are well-separated, use standard Parlett formula
-        if (Number(absDiff) > 1e-10) {
+        if (Number(absDiff) > EIGENVALUE_SEP_TOL) {
           // F[i,j] = (T[i,j] * (F[i,i] - F[j,j]) - sum) / (T[i,i] - T[j,j])
           const numerator = subtract(
             multiply(tij, fdiff),
@@ -230,7 +238,7 @@ export const createLogmTriu = /* #__PURE__ */ factory(name, dependencies, ({ typ
           result[i][j] = divide(numerator, diff)
         } else {
           // Eigenvalues nearly equal - use L'Hôpital's rule
-          if (Number(abs(sum)) < 1e-14) {
+          if (Number(abs(sum)) < SMALL_SUM_TOL) {
             // Simple case: F[i,j] = T[i,j] / T[i,i]
             result[i][j] = divide(tij, tii)
           } else {
