@@ -150,9 +150,9 @@ export const createLogmTriu = /* #__PURE__ */ factory(name, dependencies, ({ typ
         const fdiff = subtract(fii, fjj)
 
         // If eigenvalues are well-separated, use standard Parlett formula
-        if (Number(absDiff) > 1e-10) {
-          // F[i,j] = (T[i,j] * (F[i,i] - F[j,j]) - sum) / (T[i,i] - T[j,j])
-          const numerator = subtract(
+        if (Number(absDiff) > EIGENVALUE_SEP_TOL) {
+          // F[i,j] = (T[i,j] * (F[i,i] - F[j,j]) + sum) / (T[i,i] - T[j,j])
+          const numerator = add(
             multiply(tij, fdiff),
             sum
           )
@@ -230,8 +230,8 @@ export const createLogmTriu = /* #__PURE__ */ factory(name, dependencies, ({ typ
 
         // If eigenvalues are well-separated, use standard Parlett formula
         if (Number(absDiff) > EIGENVALUE_SEP_TOL) {
-          // F[i,j] = (T[i,j] * (F[i,i] - F[j,j]) - sum) / (T[i,i] - T[j,j])
-          const numerator = subtract(
+          // F[i,j] = (T[i,j] * (F[i,i] - F[j,j]) + sum) / (T[i,i] - T[j,j])
+          const numerator = add(
             multiply(tij, fdiff),
             sum
           )
