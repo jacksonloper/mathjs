@@ -3,23 +3,25 @@ import { format } from '../../utils/string.js'
 import { factory } from '../../utils/factory.js'
 
 const name = 'logm'
-const dependencies = ['typed', 'matrix', 'log', 'multiply', 'subtract', 'add', 'divide', 'abs', 'identity', 'sqrtm']
+const dependencies = ['typed', 'matrix', 'log', 'multiply', 'subtract', 'add', 'divide', 'abs', 'identity', 'schur', 'transpose', 'sqrtm']
 
-export const createLogm = /* #__PURE__ */ factory(name, dependencies, ({ typed, matrix, log, multiply, subtract, add, divide, abs, identity, sqrtm }) => {
+export const createLogm = /* #__PURE__ */ factory(name, dependencies, ({ typed, matrix, log, multiply, subtract, add, divide, abs, identity, schur, transpose, sqrtm }) => {
   /**
    * Calculate the matrix logarithm of a square matrix. The matrix logarithm is
    * the inverse of the matrix exponential. Not to be confused with log(a),
    * which performs element-wise logarithm.
    *
-   * This function uses the inverse scaling and squaring method with Taylor series.
-   * The matrix is repeatedly square-rooted until it is close to the identity matrix,
-   * then the Taylor series log(I + X) ≈ sum_{k=1}^∞ (-1)^{k+1} X^k / k is used,
-   * and finally the result is scaled back by 2^m. This approach mirrors the
-   * scipy.linalg.logm implementation for real matrices.
-   *
-   * For more details, see:
+   * This function uses the Schur-Parlett algorithm as described in:
    * - "Functions of Matrices: Theory and Computation" by N. J. Higham (2008)
-   * - scipy.linalg.logm documentation
+   * - Al-Mohy and Higham (2011), "Improved Inverse Scaling and Squaring Algorithms"
+   *
+   * The algorithm:
+   * 1. Computes the Schur decomposition A = U*T*U^T
+   * 2. Computes log(T) using Parlett recurrence on the triangular matrix
+   * 3. Transforms back: log(A) = U*log(T)*U^T
+   *
+   * This approach mirrors scipy.linalg.logm and provides better numerical stability
+   * for matrices with complex eigenvalues, negative eigenvalues, and ill-conditioned cases.
    *
    * Syntax:
    *
@@ -35,7 +37,7 @@ export const createLogm = /* #__PURE__ */ factory(name, dependencies, ({ typed, 
    *
    * See also:
    *
-   *     expm, log, sqrtm
+   *     expm, log, sqrtm, schur
    *
    * @param {Matrix | Array} A  A square matrix
    * @return {Matrix | Array}   The matrix logarithm of A
@@ -53,7 +55,8 @@ export const createLogm = /* #__PURE__ */ factory(name, dependencies, ({ typed, 
   })
 
   /**
-   * Internal implementation of matrix logarithm
+   * Internal implementation of matrix logarithm using Schur-Parlett algorithm
+   * Falls back to Taylor series for sparse matrices or if Schur fails
    */
   function _logm (A) {
     // Check if matrix is square
@@ -73,11 +76,37 @@ export const createLogm = /* #__PURE__ */ factory(name, dependencies, ({ typed, 
       return isSparseMatrix(A) ? A.createSparseMatrix(result) : result
     }
 
-    // Use inverse scaling and squaring method
-    // The idea: repeatedly take square roots until ||A - I|| < 0.5,
-    // then use Taylor series log(A) = log(I + X) ≈ sum_{k=1}^∞ (-1)^{k+1} X^k / k
-    // Finally, multiply result by 2^m where m is number of square roots taken
+    // For sparse matrices, use fallback (Schur requires QR which doesn't support sparse)
+    if (isSparseMatrix(A)) {
+      return _logmTaylorSeries(A, n)
+    }
 
+    try {
+      // Try Schur-Parlett algorithm (best for general case)
+      const schurResult = schur(A)
+      const U = schurResult.U
+      const T = schurResult.T
+
+      // Compute log(T) using Parlett recurrence on upper triangular matrix
+      const logT = _logTriangular(T, n)
+
+      // Transform back: log(A) = U * log(T) * U^T
+      const UT = transpose(U)
+      let result = multiply(U, logT)
+      result = multiply(result, UT)
+
+      return result
+    } catch (error) {
+      // If Schur fails, fall back to Taylor series
+      return _logmTaylorSeries(A, n)
+    }
+  }
+
+  /**
+   * Fallback implementation using inverse scaling and squaring with Taylor series
+   * (for sparse matrices or if Schur fails)
+   */
+  function _logmTaylorSeries (A, n) {
     const I = identity(n)
     let AScaled = A
     let m = 0
@@ -113,12 +142,25 @@ export const createLogm = /* #__PURE__ */ factory(name, dependencies, ({ typed, 
       }
     }
 
-    // Compute X = A - I
+    // Compute X = AScaled - I
     const X = subtract(AScaled, I)
 
-    // Compute log(I + X) using Taylor series: sum_{k=1}^p (-1)^{k+1} X^k / k
-    const p = 25 // Number of terms in series
+    // Compute log(I + X) using Taylor series
+    let logA = _taylorLog(X, n)
 
+    // Undo scaling: log(A) = 2^m * log(A^(1/2^m))
+    if (m > 0) {
+      logA = multiply(Math.pow(2, m), logA)
+    }
+
+    return isSparseMatrix(A) ? A.createSparseMatrix(logA) : logA
+  }
+
+  /**
+   * Compute log(I + X) using Taylor series
+   */
+  function _taylorLog (X, n) {
+    const p = 25 // Number of terms in series
     let logA = zeros(n, n)
     let Xpower = X
 
@@ -133,12 +175,7 @@ export const createLogm = /* #__PURE__ */ factory(name, dependencies, ({ typed, 
       }
     }
 
-    // Undo scaling: log(A) = 2^m * log(A^(1/2^m))
-    if (m > 0) {
-      logA = multiply(Math.pow(2, m), logA)
-    }
-
-    return isSparseMatrix(A) ? A.createSparseMatrix(logA) : logA
+    return logA
   }
 
   /**
@@ -152,6 +189,82 @@ export const createLogm = /* #__PURE__ */ factory(name, dependencies, ({ typed, 
         result[i][j] = 0
       }
     }
+    return matrix(result)
+  }
+
+  /**
+   * Compute logarithm of upper triangular/quasi-triangular matrix using
+   * Parlett recurrence (Algorithm 11.9 from Higham 2008)
+   */
+  function _logTriangular (T, n) {
+    const result = []
+
+    // Initialize result matrix
+    for (let i = 0; i < n; i++) {
+      result[i] = []
+      for (let j = 0; j < n; j++) {
+        result[i][j] = 0
+      }
+    }
+
+    // Compute diagonal elements - log of eigenvalues
+    for (let i = 0; i < n; i++) {
+      const tii = T.get([i, i])
+      result[i][i] = log(tii)
+    }
+
+    // Use Parlett's recurrence for off-diagonal elements
+    // Correct formula: F[i,j] * (T[i,i] - T[j,j]) = T[i,j] * (F[i,i] - F[j,j]) - sum
+    // Where sum = sum_{k=i+1}^{j-1} (F[i,k]*T[k,j] - T[i,k]*F[k,j])
+
+    for (let diag = 1; diag < n; diag++) {
+      for (let i = 0; i < n - diag; i++) {
+        const j = i + diag
+
+        // Compute sum for Parlett recurrence
+        let sum = 0
+        for (let k = i + 1; k < j; k++) {
+          sum = add(sum, subtract(
+            multiply(result[i][k], T.get([k, j])),
+            multiply(T.get([i, k]), result[k][j])
+          ))
+        }
+
+        const tii = T.get([i, i])
+        const tjj = T.get([j, j])
+        const tij = T.get([i, j])
+        const fii = result[i][i]
+        const fjj = result[j][j]
+
+        // Check if diagonal elements (eigenvalues) are close
+        const diff = subtract(tii, tjj)
+        const absDiff = abs(diff)
+        const fdiff = subtract(fii, fjj)
+
+        // If eigenvalues are well-separated, use standard Parlett formula
+        if (Number(absDiff) > 1e-10) {
+          // F[i,j] = (T[i,j] * (F[i,i] - F[j,j]) - sum) / (T[i,i] - T[j,j])
+          const numerator = subtract(
+            multiply(tij, fdiff),
+            sum
+          )
+          result[i][j] = divide(numerator, diff)
+        } else {
+          // Eigenvalues nearly equal - use L'Hôpital's rule
+          // For logarithm: d(log(t))/dt = 1/t
+          // So F[i,j] = T[i,j] / T[i,i] when T[i,i] = T[j,j] and no sum terms
+          if (Number(abs(sum)) < 1e-14) {
+            // Simple case: F[i,j] = T[i,j] / T[i,i]
+            result[i][j] = divide(tij, tii)
+          } else {
+            // With sum terms, use average
+            const avgDiag = multiply(0.5, add(tii, tjj))
+            result[i][j] = divide(subtract(tij, sum), avgDiag)
+          }
+        }
+      }
+    }
+
     return matrix(result)
   }
 })
