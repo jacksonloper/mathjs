@@ -5,7 +5,7 @@ import { factory } from '../../utils/factory.js'
 const name = 'logm'
 const dependencies = ['typed', 'matrix', 'log', 'multiply', 'subtract', 'add', 'divide', 'abs', 'identity', 'schur', 'transpose', 'sqrtm', 'rsf2csf', 'logm_triu', 'conj']
 
-export const createLogm = /* #__PURE__ */ factory(name, dependencies, ({ typed, matrix, log, multiply, subtract, add, divide, abs, identity, schur, transpose, sqrtm, rsf2csf, logm_triu, conj }) => {
+export const createLogm = /* #__PURE__ */ factory(name, dependencies, ({ typed, matrix, log, multiply, subtract, add, divide, abs, identity, schur, transpose, sqrtm, rsf2csf, logm_triu, conj }) => { // eslint-disable-line camelcase
   /**
    * Calculate the matrix logarithm of a square matrix. The matrix logarithm is
    * the inverse of the matrix exponential. Not to be confused with log(a),
