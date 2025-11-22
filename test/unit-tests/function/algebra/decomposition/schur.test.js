@@ -61,4 +61,37 @@ describe('schur', function () {
       [-0.6745633977804205, 0.24977632323107185, 0.6575567219332444, -0.22147775183161147, 0.03380493473031572]
     ]))) < 1e-3)
   })
+
+  it('should produce quasi-upper triangular matrix for rotation matrices', function () {
+    // Rotation matrix from random QR decomposition
+    const R = math.matrix([
+      [-0.03591206220229135, -0.09100469507870354, 0.9952027277203429],
+      [-0.3802068171617618, -0.9197139315803332, -0.09782157349362577],
+      [0.9242040358990549, -0.38189583596928406, -0.0015717815434243287]
+    ])
+
+    const schurResult = math.schur(R)
+    const T = schurResult.T
+    const U = schurResult.U
+    const n = T.size()[0]
+    const tolerance = 1e-10
+
+    // Check that T is quasi-upper triangular:
+    // - Elements below the first subdiagonal should be zero
+    // - First subdiagonal may have non-zero elements (for 2x2 blocks)
+    for (let i = 2; i < n; i++) {
+      for (let j = 0; j < i - 1; j++) {
+        const val = Math.abs(T.get([i, j]))
+        assert.ok(val < tolerance,
+          `T[${i},${j}] = ${T.get([i, j])} has absolute value ${val} which exceeds tolerance ${tolerance}`)
+      }
+    }
+
+    // Verify that A = U * T * U^T
+    const UT = math.transpose(U)
+    const reconstructed = math.multiply(math.multiply(U, T), UT)
+    const diff = math.norm(math.subtract(reconstructed, R))
+    assert.ok(diff < tolerance,
+      `Reconstruction error ${diff} exceeds tolerance ${tolerance}`)
+  })
 })
