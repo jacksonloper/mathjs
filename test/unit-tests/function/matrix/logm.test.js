@@ -100,7 +100,7 @@ describe('logm', function () {
     const A2 = [[1, 0.5, 0], [0, 2, 0.5], [0, 0, 3]]
     const expA2 = expm(A2)
     const logExpA2 = logm(expA2)
-    approxDeepEqual(logExpA2.valueOf(), A2, 0.3) // Higher tolerance for 3x3 with zeros
+    approxDeepEqual(logExpA2.valueOf(), A2, 0.01)
   })
 
   it('should handle the Moler-Van Loan test case', function () {
@@ -134,9 +134,8 @@ describe('logm', function () {
     const result = logm(A)
 
     // Verify by computing expm of result
-    // Note: 3x3 upper triangular with zeros can have larger errors in round-trip
     const expResult = expm(result)
-    approxDeepEqual(expResult.valueOf(), A, 0.4) // Higher tolerance for challenging 3x3 case
+    approxDeepEqual(expResult.valueOf(), A, 0.01)
   })
 
   it('should handle nilpotent matrices', function () {
@@ -169,10 +168,8 @@ describe('logm', function () {
     assert.strictEqual(logA[0].length, 5)
 
     // Verify by computing expm(logm(A)) ≈ A
-    // Note: 5x5 matrices with mixed 2x2 blocks can have larger errors in round-trip
-    // due to accumulated numerical errors in Parlett recurrence across blocks
     const expLogA = expm(logA)
-    approxDeepEqual(expLogA.valueOf(), A, 1.5)
+    approxDeepEqual(expLogA.valueOf(), A, 0.01)
   })
 
   it('should LaTeX logm', function () {
